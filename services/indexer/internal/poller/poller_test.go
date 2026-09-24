@@ -566,6 +566,13 @@ type cursorCtxCapturingStore struct {
 func (s *cursorCtxCapturingStore) BatchInsertWithCursor(ctx context.Context, network string, ledger uint32, events []Event, invocations []Invocation, syncState SyncState) error {
 	s.batchCommitted = true
 	s.batchCommitCtxErr = ctx.Err()
+	batchInsertCalled bool
+	batchInsertCtxErr error
+}
+
+func (s *cursorCtxCapturingStore) BatchInsertWithCursor(ctx context.Context, network string, ledger uint32, events []Event, invocations []Invocation, syncState SyncState) error {
+	s.batchInsertCalled = true
+	s.batchInsertCtxErr = ctx.Err()
 	return s.fakeStore.BatchInsertWithCursor(ctx, network, ledger, events, invocations, syncState)
 }
 
@@ -632,6 +639,11 @@ func TestPoller_SIGTERM_finishesInFlightBatchAndCommitsCursor(t *testing.T) {
 	}
 	if store.batchCommitCtxErr != nil {
 		t.Errorf("cursor commit observed a cancelled context (%v); the in-flight batch must finish on a context detached from shutdown", store.batchCommitCtxErr)
+	if !store.batchInsertCalled {
+		t.Fatal("expected the cursor to be committed for the in-flight contract despite SIGTERM arriving mid-batch")
+	}
+	if store.batchInsertCtxErr != nil {
+		t.Errorf("cursor commit observed a cancelled context (%v); the in-flight batch must finish on a context detached from shutdown", store.batchInsertCtxErr)
 	}
 	if got := store.syncStates[contractID].LastLedger; got != 500000 {
 		t.Errorf("sync state LastLedger: want 500000, got %d", got)
