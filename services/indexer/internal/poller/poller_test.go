@@ -555,18 +555,18 @@ func TestPoller_ContinuousMode_shutsDownOnCancel(t *testing.T) {
 }
 
 // cursorCtxCapturingStore wraps fakeStore to record the context observed by
-// UpsertSyncState at call time, so a test can tell whether the cursor commit
-// ran on a context that had already been cancelled.
+// BatchInsertWithCursor at call time, so a test can tell whether the cursor
+// commit ran on a context that had already been cancelled.
 type cursorCtxCapturingStore struct {
 	*fakeStore
-	upsertCalled bool
-	upsertCtxErr error
+	batchCommitted    bool
+	batchCommitCtxErr error
 }
 
-func (s *cursorCtxCapturingStore) UpsertSyncState(ctx context.Context, state SyncState) error {
-	s.upsertCalled = true
-	s.upsertCtxErr = ctx.Err()
-	return s.fakeStore.UpsertSyncState(ctx, state)
+func (s *cursorCtxCapturingStore) BatchInsertWithCursor(ctx context.Context, network string, ledger uint32, events []Event, invocations []Invocation, syncState SyncState) error {
+	s.batchCommitted = true
+	s.batchCommitCtxErr = ctx.Err()
+	return s.fakeStore.BatchInsertWithCursor(ctx, network, ledger, events, invocations, syncState)
 }
 
 // TestPoller_SIGTERM_finishesInFlightBatchAndCommitsCursor simulates a
@@ -627,11 +627,11 @@ func TestPoller_SIGTERM_finishesInFlightBatchAndCommitsCursor(t *testing.T) {
 		t.Fatal("timed out waiting for run to finish the in-flight batch")
 	}
 
-	if !store.upsertCalled {
+	if !store.batchCommitted {
 		t.Fatal("expected the cursor to be committed for the in-flight contract despite SIGTERM arriving mid-batch")
 	}
-	if store.upsertCtxErr != nil {
-		t.Errorf("cursor commit observed a cancelled context (%v); the in-flight batch must finish on a context detached from shutdown", store.upsertCtxErr)
+	if store.batchCommitCtxErr != nil {
+		t.Errorf("cursor commit observed a cancelled context (%v); the in-flight batch must finish on a context detached from shutdown", store.batchCommitCtxErr)
 	}
 	if got := store.syncStates[contractID].LastLedger; got != 500000 {
 		t.Errorf("sync state LastLedger: want 500000, got %d", got)
